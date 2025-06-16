@@ -19,10 +19,9 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Log in to ACR
-        uses: azure/docker-login@v1
-        with:
-          login-server: ${{ secrets.ACR_NAME }}.azurecr.io
+      - name: Log in to ACR via az CLI
+        run: |
+          az acr login --name ${{ secrets.ACR_NAME }}
 
       - name: Build and push Docker image
         run: |
@@ -38,6 +37,6 @@ jobs:
                -H "Content-Type: application/json" \
                -d '{
                      "chat_id": "'"$TELEGRAM_CHAT_ID"'",
-                     "text": "✅ Образ habitica-bot успешно отправлен в ACR: '${{ secrets.ACR_NAME }}'",
+                     "text": "✅ Образ habitica-bot успешно отправлен в ACR: `${{ secrets.ACR_NAME }}`",
                      "parse_mode": "Markdown"
                    }'
