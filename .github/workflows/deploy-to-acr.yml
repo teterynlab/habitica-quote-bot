@@ -1,4 +1,4 @@
-name: Build and Push Habitica Bot to ACR
+name: Deploy Habitica Bot via Publish Profile
 
 on:
   push:
@@ -7,11 +7,11 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-and-push:
+  build-and-deploy:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repo
+      - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Log in to Azure
@@ -19,20 +19,26 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Log in to ACR
+      - name: Build Docker image
         run: |
-          az acr login --name ${{ secrets.ACR_NAME }}
+          docker build -t habitica-bot .
 
-      - name: Build and push Docker image
+      - name: Save image to tar
         run: |
-          docker build -t ${{ secrets.ACR_NAME }}.azurecr.io/${{ secrets.IMAGE_NAME }}:cron .
-          docker push ${{ secrets.ACR_NAME }}.azurecr.io/${{ secrets.IMAGE_NAME }}:cron
+          docker save habitica-bot | gzip > habitica-bot.tar.gz
 
-      - name: Restart Web App
+      - name: Package deployable zip
         run: |
-          az webapp restart \
-            --name habitica-webapp \
-            --resource-group habitica-rg
+          mkdir deploy
+          cp habitica-bot.tar.gz deploy/
+          zip -r deploy.zip deploy
+
+      - name: Deploy using publish profile
+        uses: azure/webapps-deploy@v2
+        with:
+          app-name: habitica-webapp
+          publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
+          package: deploy.zip
 
       - name: Send Telegram notification
         env:
@@ -43,6 +49,6 @@ jobs:
                -H "Content-Type: application/json" \
                -d '{
                      "chat_id": "'"$TELEGRAM_CHAT_ID"'",
-                     "text": "♻️ Образ перезапущен в Web App `habitica-webapp`",
+                     "text": "🚀 Образ `habitica-bot` задеплоен в `habitica-webapp` через publish profile",
                      "parse_mode": "Markdown"
                    }'
