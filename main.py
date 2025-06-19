@@ -1,66 +1,39 @@
-#!/usr/bin/env python3
-
+import logging
+from telegram import Update
+from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, ContextTypes, filters
+from habitica import send_daily_quote, get_random_quote
 import os
-import requests
-import json
-from datetime import date
+import sys
 
-def send_telegram(message):
-    token = os.getenv("TELEGRAM_BOT_TOKEN")
-    chat_id = os.getenv("TELEGRAM_CHAT_ID")
-    if not token or not chat_id:
-        print("⚠️ Telegram config missing.")
-        return
-    try:
-        resp = requests.post(f"https://api.telegram.org/bot{token}/sendMessage", json={
-            "chat_id": chat_id,
-            "text": message,
-            "parse_mode": "Markdown"
-        })
-        print("Telegram status:", resp.status_code)
-    except Exception as e:
-        print("Telegram send error:", str(e))
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-try:
-    with open("quotes.json", encoding="utf-8") as f:
-        quotes = json.load(f)
+BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 
-    today = date.today().isoformat()
-    quote = next((q for q in quotes if q["date"] == today), None)
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Привет! Я бот с цитатами из фантастики. Напиши /quote для новой цитаты.")
 
-    if not quote:
-        raise Exception("❌ No quote found for today.")
+async def quote(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text, source = get_random_quote()
+    await update.message.reply_text(f"🧠 *{text}*\n\n📚 _{source}_", parse_mode="Markdown")
 
-    user_id = os.getenv("HABITICA_USER_ID")
-    api_token = os.getenv("HABITICA_API_TOKEN")
-    headers = {
-        "x-api-user": user_id,
-        "x-api-key": api_token,
-        "Content-Type": "application/json"
-    }
+async def echo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Напиши /quote для новой цитаты.")
 
-    api_url = "https://habitica.com/api/v3"
-    tasks = requests.get(f"{api_url}/tasks/user?type=dailys", headers=headers).json()
-    quote_task = next((t for t in tasks["data"] if t["text"] == "Цитата дня"), None)
+def run_bot():
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("quote", quote))
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, echo))
+    logger.info("Бот запущен.")
+    app.run_polling()
 
-    note = f'{quote["en"]}\n{quote["ru"]}\nИсточник: {quote["source"]}'
+def run_cron():
+    send_daily_quote()
 
-    if not quote_task:
-        resp = requests.post(f"{api_url}/tasks/user", headers=headers, json={
-            "type": "daily",
-            "text": "Цитата дня",
-            "notes": note,
-            "frequency": "daily"
-        })
-        send_telegram(f"🆕 Создана задача 'Цитата дня': *{quote['en']}*")
+if __name__ == "__main__":
+    mode = sys.argv[1] if len(sys.argv) > 1 else "bot"
+    if mode == "cron":
+        run_cron()
     else:
-        task_id = quote_task["id"]
-        resp = requests.put(f"{api_url}/tasks/{task_id}", headers=headers, json={
-            "notes": note
-        })
-        send_telegram(f"✅ Обновлена 'Цитата дня': *{quote['en']}*")
-
-except Exception as e:
-    error_message = f"❌ Ошибка при обновлении Habitica: `{str(e)}`"
-    send_telegram(error_message)
-    print(error_message)
+        run_bot()

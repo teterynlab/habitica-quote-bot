@@ -1,3 +1,3 @@
-#!/bin/sh
-echo "[$(date)] Cron triggered" >> /var/log/cron.log
-python /app/main.py >> /var/log/cron.log 2>&1
+#!/bin/bash
+# Удобно для запуска вручную
+python3 main.py "$@"
